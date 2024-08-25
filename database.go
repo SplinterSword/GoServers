@@ -3,124 +3,132 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"os"
 	"sync"
 )
 
-// Chirp represents a single chirp
+type DB struct {
+	path string
+	lock *sync.RWMutex
+}
+
 type Chirp struct {
-	ID   int    `json:"id"`
+	Id   int    `json:"id"`
 	Body string `json:"body"`
 }
 
-// DBStructure represents the structure of the database file
-type DBStructure struct {
-	Chirps map[int]Chirp `json:"chirps"`
+type DBstructure struct {
+	Chirps []Chirp `json:"chirps"`
 }
 
-// DB encapsulates the path to the database file and a mutex
-type DB struct {
-	path string
-	mux  *sync.RWMutex
-}
-
-func (db *DB) ensureDB() error {
-	db.mux.Lock()
-	defer db.mux.Unlock()
-
-	if _, err := os.Stat(db.path); errors.Is(err, os.ErrNotExist) {
-		// Create an empty database file if it doesn't exist
-		initialData := DBStructure{
-			Chirps: make(map[int]Chirp),
-		}
-		return db.writeDB(initialData)
-	}
-	return nil
-}
-
-func NewDB(path string) (*DB, error) {
+// Creating a new Database
+func newDataBase(filePath string) *DB {
 	db := &DB{
-		path: path,
-		mux:  &sync.RWMutex{},
+		path: filePath,
+		lock: &sync.RWMutex{},
 	}
 
-	// Ensure the database file exists
-	if err := db.ensureDB(); err != nil {
-		return nil, err
+	DBstructure := DBstructure{}
+
+	// Check if file exists; if not, create it
+	if _, err := os.Stat(filePath); errors.Is(err, os.ErrNotExist) {
+
+		file, err := os.Create(filePath)
+		if err != nil {
+			log.Fatalf("Can't create the file: %v", err)
+		}
+
+		data, err := json.Marshal(DBstructure)
+		if err != nil {
+			log.Fatalf("Can't create the file: %v", err)
+		}
+
+		err = os.WriteFile(db.path, data, 0777)
+		if err != nil {
+			log.Fatalf("Can't create the file: %v", err)
+		}
+
+		file.Close()
 	}
 
-	return db, nil
+	return db
 }
 
-func (db *DB) loadDB() (DBStructure, error) {
-	db.mux.RLock()
-	defer db.mux.RUnlock()
-
-	file, err := os.Open(db.path)
-	if err != nil {
-		return DBStructure{}, err
+// Ensures whether the file already exists or not
+func (db *DB) ensureDB() {
+	if _, err := os.Stat(db.path); os.IsNotExist(err) {
+		newDB := newDataBase(db.path)
+		db.path = newDB.path
+		db.lock = newDB.lock
 	}
-	defer file.Close()
+}
 
-	var dbStructure DBStructure
-	if err := json.NewDecoder(file).Decode(&dbStructure); err != nil {
-		return DBStructure{}, err
+// loadDB reads the database file into memory
+func (db *DB) loadDB() (DBstructure, error) {
+	db.lock.RLock()
+	defer db.lock.RUnlock()
+
+	data, err := os.ReadFile(db.path)
+	if err != nil {
+		return DBstructure{}, err
+	}
+
+	dbStructure := DBstructure{}
+	err = json.Unmarshal(data, &dbStructure)
+	if err != nil {
+		return DBstructure{}, err
 	}
 
 	return dbStructure, nil
 }
 
-func (db *DB) writeDB(dbStructure DBStructure) error {
-	db.mux.Lock()
-	defer db.mux.Unlock()
+// writeDB writes the database file to disk
+func (db *DB) writeDB(dbStructure DBstructure) error {
+	db.lock.Lock()
+	defer db.lock.Unlock()
 
-	file, err := os.Create(db.path)
+	data, err := json.Marshal(dbStructure)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 
-	if err := json.NewEncoder(file).Encode(dbStructure); err != nil {
+	err = os.WriteFile(db.path, data, 0777)
+	if err != nil {
 		return err
 	}
 
 	return nil
 }
 
+// CreateChirp creates a new chirp and saves it to disk
 func (db *DB) CreateChirp(body string) (Chirp, error) {
 	dbStructure, err := db.loadDB()
 	if err != nil {
 		return Chirp{}, err
 	}
 
-	// Find the next available ID
-	newID := len(dbStructure.Chirps) + 1
-	chirp := Chirp{
-		ID:   newID,
+	newChirp := Chirp{
+		Id:   len(dbStructure.Chirps) + 1,
 		Body: body,
 	}
 
-	// Save the chirp to the map
-	dbStructure.Chirps[newID] = chirp
+	dbStructure.Chirps = append(dbStructure.Chirps, newChirp)
 
-	// Write the updated structure to disk
-	if err := db.writeDB(dbStructure); err != nil {
+	err = db.writeDB(dbStructure)
+	if err != nil {
 		return Chirp{}, err
 	}
 
-	return chirp, nil
+	return newChirp, nil
 }
 
+// GetChirps returns all chirps in the database
 func (db *DB) GetChirps() ([]Chirp, error) {
 	dbStructure, err := db.loadDB()
 	if err != nil {
 		return nil, err
 	}
 
-	chirps := make([]Chirp, 0, len(dbStructure.Chirps))
-	for _, chirp := range dbStructure.Chirps {
-		chirps = append(chirps, chirp)
-	}
-
-	return chirps, nil
+	return dbStructure.Chirps, nil
 }
