@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -15,46 +14,24 @@ type apiConfig struct {
 	fileServerHits int
 }
 
-// This is a middleware
-func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cfg.fileServerHits++
-		next.ServeHTTP(w, r)
-	})
+type idcounter struct {
+	id int
 }
 
-func (cfg *apiConfig) handleMetrics(w http.ResponseWriter, req *http.Request) {
-	w.Header().Add("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	hits := fmt.Sprintf(`<html>
-
-<body>
-    <h1>Welcome, Chirpy Admin</h1>
-    <p>Chirpy has been visited %d times!</p>
-</body>
-
-</html>`, cfg.fileServerHits)
-	w.Write([]byte(hits))
+type Chirp struct {
+	Id   int    `json:"id"`
+	Body string `json:"body"`
 }
 
-func respondWithError(w http.ResponseWriter, code int, msg string) {
-
-	respondWithJSON(w, code, map[string]string{"error": msg})
+type chirpData struct {
+	Chirps []Chirp `json:"chirps"`
 }
 
-func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
-	response, err := json.Marshal(payload)
+var data chirpData
 
-	if err != nil {
-		respondWithError(w, 500, err.Error())
-		return
-	}
+func (idVariable *idcounter) ValidateHandler(w http.ResponseWriter, r *http.Request) {
 
-	w.WriteHeader(code)
-	w.Write(response)
-}
-
-func ValidateHandler(w http.ResponseWriter, r *http.Request) {
+	idVariable.id++
 
 	type parameters struct {
 		// these tags indicate how the keys in the JSON should be mapped to the struct fields
@@ -87,22 +64,41 @@ func ValidateHandler(w http.ResponseWriter, r *http.Request) {
 
 	cleanBody := strings.Join(dirtyArray, " ")
 
-	respondWithJSON(w, 200, map[string]string{"cleaned_body": cleanBody})
+	responseBody := Chirp{
+		Id:   idVariable.id,
+		Body: cleanBody,
+	}
+
+	data.Chirps = append(data.Chirps, responseBody)
+
+	respondWithJSON(w, 201, responseBody)
+}
+
+func (chirpData *chirpData) getData(w http.ResponseWriter, req *http.Request) {
+	respondWithJSON(w, 200, chirpData.Chirps)
 }
 
 func main() {
 
 	// http.NewServeMux() creates a server multiplexer
 	mux := http.NewServeMux()
+
+	// Counters
 	cfg := apiConfig{
 		fileServerHits: 0,
 	}
+
+	idVariable := idcounter{
+		id: 0,
+	}
+
 	mux.Handle("/app/*", cfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(filePathRoot)))))
 	// If no method is mentioned the it responds to all the methods
 	mux.HandleFunc("GET /api/healthz", handleReadiness)
 	mux.HandleFunc("GET /admin/metrics", cfg.handleMetrics)
 	mux.HandleFunc("/api/reset", cfg.Reset)
-	mux.HandleFunc("POST /api/validate_chirp", ValidateHandler)
+	mux.HandleFunc("POST /api/chirps", idVariable.ValidateHandler)
+	mux.HandleFunc("GET /api/chirps", data.getData)
 
 	// use to create server
 	srv := &http.Server{
