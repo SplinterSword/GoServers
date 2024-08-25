@@ -10,28 +10,7 @@ import (
 const port = "8080"
 const filePathRoot = "."
 
-type apiConfig struct {
-	fileServerHits int
-}
-
-type idcounter struct {
-	id int
-}
-
-type Chirp struct {
-	Id   int    `json:"id"`
-	Body string `json:"body"`
-}
-
-type chirpData struct {
-	Chirps []Chirp `json:"chirps"`
-}
-
-var data chirpData
-
-func (idVariable *idcounter) ValidateHandler(w http.ResponseWriter, r *http.Request) {
-
-	idVariable.id++
+func (db *DB) ValidateHandler(w http.ResponseWriter, r *http.Request) {
 
 	type parameters struct {
 		// these tags indicate how the keys in the JSON should be mapped to the struct fields
@@ -64,18 +43,14 @@ func (idVariable *idcounter) ValidateHandler(w http.ResponseWriter, r *http.Requ
 
 	cleanBody := strings.Join(dirtyArray, " ")
 
-	responseBody := Chirp{
-		Id:   idVariable.id,
-		Body: cleanBody,
-	}
-
-	data.Chirps = append(data.Chirps, responseBody)
+	responseBody, _ := db.CreateChirp(cleanBody)
 
 	respondWithJSON(w, 201, responseBody)
 }
 
-func (chirpData *chirpData) getData(w http.ResponseWriter, req *http.Request) {
-	respondWithJSON(w, 200, chirpData.Chirps)
+func (db *DB) getData(w http.ResponseWriter, req *http.Request) {
+	data, _ := db.GetChirps()
+	respondWithJSON(w, 200, data)
 }
 
 func main() {
@@ -83,13 +58,12 @@ func main() {
 	// http.NewServeMux() creates a server multiplexer
 	mux := http.NewServeMux()
 
+	// Create Database
+	db, _ := NewDB("database.json")
+
 	// Counters
 	cfg := apiConfig{
 		fileServerHits: 0,
-	}
-
-	idVariable := idcounter{
-		id: 0,
 	}
 
 	mux.Handle("/app/*", cfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(filePathRoot)))))
@@ -97,8 +71,8 @@ func main() {
 	mux.HandleFunc("GET /api/healthz", handleReadiness)
 	mux.HandleFunc("GET /admin/metrics", cfg.handleMetrics)
 	mux.HandleFunc("/api/reset", cfg.Reset)
-	mux.HandleFunc("POST /api/chirps", idVariable.ValidateHandler)
-	mux.HandleFunc("GET /api/chirps", data.getData)
+	mux.HandleFunc("POST /api/chirps", db.ValidateHandler)
+	mux.HandleFunc("GET /api/chirps", db.getData)
 
 	// use to create server
 	srv := &http.Server{
