@@ -4,61 +4,104 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"strings"
 	"sync"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 const port = "8080"
 const filePathRoot = "."
 
-func (db *DB) ValidateHandler(w http.ResponseWriter, r *http.Request) {
+func (db *DB) MakeUser(w http.ResponseWriter, req *http.Request) {
 
 	type parameters struct {
-		Body string `json:"body"`
+		Body     string `json:"email"`
+		Password string `json:"password"`
 	}
 
-	// Decode request body
-	decoder := json.NewDecoder(r.Body)
+	decoder := json.NewDecoder(req.Body)
+
 	params := parameters{}
 
-	// Convert JSON to struct
 	err := decoder.Decode(&params)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
 
-	dirtyBody := params.Body
-	dirtyArray := strings.Split(dirtyBody, " ")
+	data, err := db.CreateMail(params.Body, params.Password)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to create a new User")
+		return
+	}
 
-	for i := range dirtyArray {
-		switch strings.ToLower(dirtyArray[i]) {
-		case "kerfuffle", "sharbert", "fornax":
-			dirtyArray[i] = "****"
+	type responseStructure struct {
+		Id    int    `json:"id"`
+		Email string `json:"email"`
+	}
+
+	response := responseStructure{
+		Id:    data.Id,
+		Email: data.Email,
+	}
+
+	respondWithJSON(w, http.StatusOK, response)
+
+	respondWithJSON(w, http.StatusCreated, response)
+}
+
+func (db *DB) HandleLogin(w http.ResponseWriter, req *http.Request) {
+
+	type parameters struct {
+		Body     string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	decoder := json.NewDecoder(req.Body)
+
+	params := parameters{}
+
+	err := decoder.Decode(&params)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+
+	AllUsers, err := db.GetMails()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to Get all users User")
+		return
+	}
+
+	var idNumber int
+
+	for i := 0; i < len(AllUsers); i++ {
+		if AllUsers[i].Email == params.Body {
+			err := bcrypt.CompareHashAndPassword(AllUsers[i].Password, []byte(params.Password))
+
+			if err != nil {
+				respondWithError(w, http.StatusUnauthorized, "Invalid Password")
+				return
+			}
+
+			idNumber = AllUsers[i].Id
+			break
 		}
 	}
 
-	cleanBody := strings.Join(dirtyArray, " ")
-
-	// Create chirp and save to database
-	responseBody, err := db.CreateChirp(cleanBody)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Failed to create chirp")
-		return
+	type responseStructure struct {
+		Id    int    `json:"id"`
+		Email string `json:"email"`
 	}
 
-	respondWithJSON(w, http.StatusCreated, responseBody)
-}
-
-func (db *DB) getData(w http.ResponseWriter, req *http.Request) {
-	data, err := db.GetChirps()
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Failed to retrieve chirps")
-		return
+	response := responseStructure{
+		Id:    idNumber,
+		Email: params.Body,
 	}
 
-	respondWithJSON(w, http.StatusOK, data)
+	respondWithJSON(w, http.StatusOK, response)
 }
+
 func main() {
 
 	// http.NewServeMux() creates a server multiplexer
@@ -84,6 +127,9 @@ func main() {
 	mux.HandleFunc("/api/reset", cfg.Reset)
 	mux.HandleFunc("POST /api/chirps", db.ValidateHandler)
 	mux.HandleFunc("GET /api/chirps", db.getData)
+	mux.HandleFunc("GET /api/chirps/{chirpID}", db.getSpecificData)
+	mux.HandleFunc("POST /api/users", db.MakeUser)
+	mux.HandleFunc("POST /api/login", db.HandleLogin)
 
 	// use to create server
 	srv := &http.Server{

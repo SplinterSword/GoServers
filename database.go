@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"sync"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 type DB struct {
@@ -18,8 +20,15 @@ type Chirp struct {
 	Body string `json:"body"`
 }
 
+type Mail struct {
+	Id       int    `json:"id"`
+	Email    string `json:"email"`
+	Password []byte `json:"password"`
+}
+
 type DBstructure struct {
 	Chirps []Chirp `json:"chirps"`
+	Emails []Mail  `json:"emails"`
 }
 
 // Creating a new Database
@@ -131,4 +140,38 @@ func (db *DB) GetChirps() ([]Chirp, error) {
 	}
 
 	return dbStructure.Chirps, nil
+}
+
+// CreateMail creates a new mail and saves it to disk
+func (db *DB) CreateMail(Body string, password string) (Mail, error) {
+	dbStructure, err := db.loadDB()
+	if err != nil {
+		return Mail{}, err
+	}
+
+	encryptedPassword, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	newMail := Mail{
+		Id:       len(dbStructure.Emails) + 1,
+		Email:    Body,
+		Password: encryptedPassword,
+	}
+
+	dbStructure.Emails = append(dbStructure.Emails, newMail)
+
+	err = db.writeDB(dbStructure)
+	if err != nil {
+		return Mail{}, err
+	}
+
+	return newMail, nil
+}
+
+// GetMails returns all mails in the database
+func (db *DB) GetMails() ([]Mail, error) {
+	dbStructure, err := db.loadDB()
+	if err != nil {
+		return nil, err
+	}
+
+	return dbStructure.Emails, nil
 }
