@@ -2,8 +2,8 @@ package main
 
 import "net/http"
 
-func (cfg *apiConfig) Reset(w http.ResponseWriter, req *http.Request) {
+func (cfg *apiConfig) handlerReset(w http.ResponseWriter, r *http.Request) {
+	cfg.fileserverHits = 0
 	w.WriteHeader(http.StatusOK)
-	cfg.fileServerHits = 0
-	w.Write([]byte("Resetted"))
+	w.Write([]byte("Hits reset to 0"))
 }
