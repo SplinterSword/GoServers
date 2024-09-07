@@ -14,6 +14,7 @@ type apiConfig struct {
 	fileserverHits int
 	DB             *database.DB
 	jwtSecret      string
+	PolkaKey       string
 }
 
 func main() {
@@ -23,8 +24,12 @@ func main() {
 	godotenv.Load(".env")
 
 	jwtSecret := os.Getenv("JWT_SECRET")
+	PolkaKey := os.Getenv("POLKA_KEY")
 	if jwtSecret == "" {
 		log.Fatal("JWT_SECRET environment variable is not set")
+	}
+	if PolkaKey == "" {
+		log.Fatal("POLKA_KAY environment variable is not set")
 	}
 
 	db, err := database.NewDB("database.json")
@@ -45,6 +50,7 @@ func main() {
 		fileserverHits: 0,
 		DB:             db,
 		jwtSecret:      jwtSecret,
+		PolkaKey:       PolkaKey,
 	}
 
 	mux := http.NewServeMux()
@@ -60,6 +66,7 @@ func main() {
 
 	mux.HandleFunc("POST /api/users", apiCfg.handlerUsersCreate)
 	mux.HandleFunc("PUT /api/users", apiCfg.handlerUsersUpdate)
+	mux.HandleFunc("POST /api/polka/webhooks", apiCfg.handlerUsersWebHook)
 
 	mux.HandleFunc("POST /api/chirps", apiCfg.handlerChirpsCreate)
 	mux.HandleFunc("GET /api/chirps", apiCfg.handlerChirpsRetrieve)
