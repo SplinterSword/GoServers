@@ -29,6 +29,7 @@ func (cfg *apiConfig) handlerRefresh(w http.ResponseWriter, r *http.Request) {
 		cfg.jwtSecret,
 		time.Hour,
 	)
+
 	if err != nil {
 		respondWithError(w, http.StatusUnauthorized, "Couldn't validate token")
 		return
