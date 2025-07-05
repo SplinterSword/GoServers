@@ -1,4 +1,4 @@
-# WebServers
+# GoServers
 
 A RESTful API server built with Go, implementing user authentication, authorization, and chirp (microblog) functionality. This project serves as a learning exercise for building web servers in Go.
 
